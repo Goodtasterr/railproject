@@ -121,11 +121,14 @@ def label2color(labels):
     :return: clors: shape=[n,3] 值的范围[0,1]
     """
     list = np.asarray([
-        [127,127,127],
+        [127,127,127],[128,0,128],[255,0,255],
+        # [127,127,127],
+        [0, 0, 255],[127,127,127],[0, 0, 255],
+        [0, 255, 0],
         [255,0,0],
         [0,0,255],
         [127, 0, 127],
-        [127, 127, 0]
+        [0, 255, 0]
     ],dtype=np.float)
     return list[labels]/255
 
@@ -192,28 +195,106 @@ class RailProcess():
         #得到了每次的一次函数拟合结果
         #————————需要与上一次作对比，符合流程图，斜率差距大的，判定为弯轨道，进行二次函数拟合
 
+def display_inlier_outlier(cloud, ind):
+    inlier_cloud = cloud.select_by_index(ind)
+    outlier_cloud = cloud.select_by_index(ind, invert=True)
 
+    print("Showing outliers (red) and inliers (gray): ")
+    outlier_cloud.paint_uniform_color([1, 0, 0])
+    inlier_cloud.paint_uniform_color([0, 1, 0])
+    o3d.visualization.draw_geometries([inlier_cloud, outlier_cloud],
+                                      zoom=0.3,
+                                      front=[ 0.035240267694182037, -0.96557625585128182, 0.25772197746614944 ],
+                                      lookat=[ 53.634064052299877, -0.09981487264696895, 13.151208585339701 ],
+                                      up=[ -0.015453881623073734, 0.25732481629799092, 0.96620138504350395 ],)
+    return inlier_cloud, outlier_cloud
 
-
-
-
-
+from util.UnrealDataUtil import fit_xy,gen_line_set
 if __name__ == '__main__':
     print("非规则路面分割方法")
     #1.load np array; 2.trans x-y-z to b-r-z [b=y/x, r=(x2+y2)^0.5]; 3.分配pixel坐标,二维的
-    file_root = "../dataunreal/npyfile1/"
-    npy_paths = os.listdir(file_root)
-    show_flag = False
+    file_root = "../dataunreal/unreal_res_0111"
+    # npy_paths = os.listdir(file_root)
+    npy_paths = sorted(os.listdir(file_root), key=lambda s: int(s[:-4]))
+    show_flag = True
     noise_flag = False
     res_list = []
     for i, npy_path in enumerate(npy_paths):
-        if i>=0 and i<20:
+        if i>=0 and i<29:
+            o3dshow = []
             file_path = os.path.join(file_root,npy_path)
             print(file_path)
             npy_vec = np.load(file_path)
-            rail_idx = npy_vec[:,-1]==1
 
-            railProcess = RailProcess(npy_vec[:,:3],npy_vec[:,-1])
+            print("npy_vec shape: ",npy_vec.shape)
+            rail_idx = (npy_vec[:,-1]) % 2==1
+            rail_x = npy_vec[rail_idx,:1]
+            rail_y = npy_vec[rail_idx,1:2]
+            rail_z = npy_vec[rail_idx,2:3]
+
+            line_params = fit_xy(degree=2,x=rail_x,y=rail_y)
+            # 框出安全区域内的点
+            safe_bais = 1.2
+            vec_x = npy_vec[:,:1]
+            vec_y = npy_vec[:,1:2]
+            vec_z = npy_vec[:,2:3]
+            up_y = line_params[0] + line_params[1][0][0] * vec_x + line_params[1][0][1] * vec_x ** 2 + 1.7 + safe_bais
+            down_y = line_params[0] + line_params[1][0][0] * vec_x + line_params[1][0][1] * vec_x ** 2 - 1.7 - safe_bais
+            inner_idx = (vec_y>down_y) & (vec_y<up_y) & (vec_z > -2.9) & (vec_z < 2)
+            print(vec_y.shape,down_y.shape)
+            line_set = gen_line_set(np.min(rail_x),np.max(rail_x),line_params,2)
+            o3dshow.append(line_set)
+
+            #1.pcd_outer 安全范围之外的点，灰色表示
+            outer_idx = ~inner_idx.squeeze()#(inner_idx*(-1)+1).astype(np.bool).squeeze()
+            print(outer_idx.shape)
+            pcd_outer = o3d.geometry.PointCloud()
+            pcd_outer.points = o3d.utility.Vector3dVector(npy_vec[outer_idx, :3])
+            pcd_outer.colors = o3d.utility.Vector3dVector(label2color(npy_vec[outer_idx,-1].astype(np.int)))
+            o3dshow.append(pcd_outer)
+
+            #2.pcd_inner 安全范围之内的点，绿色表示
+            pcd_inner = o3d.geometry.PointCloud()
+            pcd_inner.points = o3d.utility.Vector3dVector(npy_vec[inner_idx.squeeze(), :3])
+            inner_color = np.ones(inner_idx.shape[0],dtype=np.int)*8
+            pcd_inner.colors = o3d.utility.Vector3dVector(label2color(inner_color[inner_idx.squeeze()]))
+            # o3dshow.append(pcd_inner)
+
+            #2.5. 将pcd_inner分段。根据line_params和x值算y，比较y与y‘的大小得到idx。
+
+
+            #3.对pcd_inner分割平面
+            plane_model, inliers = pcd_inner.segment_plane(distance_threshold=0.3,
+                                                          ransac_n=7,
+                                                          num_iterations=2000)
+            #4.获得剩余点云 outlier_cloud , 使用DBSCAN
+            inlier_cloud, outlier_cloud = display_inlier_outlier(pcd_inner,inliers)
+            o3dshow.append(inlier_cloud) #加入地平面点
+
+            labels = np.array( #对 outlier_cloud 剩余点做聚类
+                outlier_cloud.cluster_dbscan(eps=0.9, min_points=7, print_progress=True))
+            print("labels::  ",labels)
+            #5.判断DBSCAN的结果
+            if (labels != []) and (len(labels) != 0):
+                n_class = np.max(labels) + 1  #取最大类别
+                n_color = np.zeros(labels.shape,dtype=np.int)
+                n_class_res = 0
+                for i in range(n_class):
+                    points_count = np.sum((labels==i).astype(np.int))
+                    print("points_count: ",points_count)
+                    if(points_count > 50):
+                        n_class_res += 1
+                        n_color[labels==i] = n_class_res
+                        #增加据障碍物矩形框，取np
+                        obstacle_arr = np.asarray(outlier_cloud.points)
+                        pcd_part = o3d.geometry.PointCloud()
+                        pcd_part.points = o3d.utility.Vector3dVector(obstacle_arr[labels == i])
+                        aabb = pcd_part.get_axis_aligned_bounding_box()
+                        o3dshow.append(aabb)
+
+                outlier_cloud.colors = o3d.utility.Vector3dVector(label2color(n_color))
+                o3dshow.append(outlier_cloud)
+                o3d.visualization.draw_geometries([outlier_cloud],window_name=npy_path)
 
             if noise_flag:
                 noise_x = (np.random.rand(npy_vec.shape[0],1)-0.5) * 0.05  # 正态分布[0~1]-0.5 再放大n倍
@@ -223,12 +304,16 @@ if __name__ == '__main__':
                 npy_vec[:,:3] += noise
 
             if show_flag:
-                pcd = o3d.geometry.PointCloud()
-                pcd.points = o3d.utility.Vector3dVector(npy_vec[:, :3])
-                pcd.colors = o3d.utility.Vector3dVector(label2color(npy_vec[:, -1].astype(np.int)))
+
                 mesh = o3d.geometry.TriangleMesh.create_coordinate_frame()
                 mesh.scale(2, center=mesh.get_center())
-                # o3d.visualization.draw_geometries([pcd,mesh],window_name=npy_path)
+                o3dshow.append(mesh)
+                o3d.visualization.draw_geometries(o3dshow,window_name=npy_path,
+                                                  zoom=0.3,
+                                                  front=[ 0.096314076554831055, 0.020511804979741765, 0.99513962061303918 ],
+                                                  lookat=[ 53.229220539861529, -2.0228925385089158, 5.6663705489609022 ],
+                                                  up=[ -0.0034982659029790973, 0.99978844152479429, -0.020269048549330322 ],
+                                                  )
 
 
 

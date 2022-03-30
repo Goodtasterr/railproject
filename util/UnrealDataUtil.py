@@ -143,3 +143,71 @@ def fit_xy(degree,x,y):
     lin_reg.fit(X_poly, y)
     # poly_para = [lin_reg.intercept_, lin_reg.coef_]
     return [lin_reg.intercept_, lin_reg.coef_]
+
+def gen_line_set(begin,end,poly_para,code=2):
+    """
+
+    :param begin:
+    :param end:
+    :param poly_para:
+    :param code: code=1 显示中心线，=2 显示3d框，
+    :return:
+    """
+
+    x = np.arange(begin, end, 0.1).reshape(-1, 1)
+    n_sample = (x).shape[0]
+    y = poly_para[0] + poly_para[1][0][0] * x + poly_para[1][0][1] * x ** 2  # + poly_para[1][0][2]*x**3
+    h = -2.9
+    safe_bais = 1.3
+
+    line_points_mid = np.concatenate((h * np.ones([n_sample, 1]), y, x), axis=1)
+    line_points_rd = np.concatenate((h * np.ones([n_sample, 1]), y + 1.7 + safe_bais, x), axis=1)
+    line_points_ld = np.concatenate((h * np.ones([n_sample, 1]), y - 1.7 - safe_bais, x), axis=1)
+    line_points_rt = np.concatenate((h * np.ones([n_sample, 1]) + 4, y + 1.7+ safe_bais, x), axis=1)
+    line_points_lt = np.concatenate((h * np.ones([n_sample, 1]) + 4, y - 1.7-safe_bais, x), axis=1)
+    line_points = np.concatenate((line_points_rd, line_points_ld,
+                                  line_points_rt, line_points_lt,line_points_mid), axis=0)
+    line_points = line_points[:,(2,1,0)]
+    if code == 2:
+        line_lines = [[j + i * n_sample, j + 1 + i * n_sample] for i in range(4) for j in range(n_sample - 1)]
+    elif code == 1:
+        line_lines = [[j + 4 * n_sample, j + 1 + 4 * n_sample] for j in range(n_sample - 1)]
+    else:
+        print("code illegal.")
+
+    line_lines = np.asarray(line_lines)
+    print("test: ", line_lines.shape, line_points.shape)
+
+    # 前后两个方形框，共8条线
+    line_lines_add = np.asarray([[0, n_sample], [n_sample, 3 * n_sample],
+                                 [2 * n_sample, 3 * n_sample],
+                                 [0 * n_sample, 2 * n_sample],
+                                 [n_sample - 1, 2 * n_sample - 1],
+                                 [2 * n_sample - 1, 4 * n_sample - 1],
+                                 [3 * n_sample - 1, 4 * n_sample - 1],
+                                 [3 * n_sample - 1, n_sample - 1]
+                                 ])
+    if code == 2:
+        line_lines = np.concatenate((line_lines, line_lines_add), axis=0)
+    line_set = o3d.geometry.LineSet(
+        points=o3d.utility.Vector3dVector(line_points),
+        lines=o3d.utility.Vector2iVector(line_lines),
+    )
+
+    line_color = [[1, 0, 0] for i in range(len(line_lines))]
+    line_set.colors = o3d.utility.Vector3dVector(line_color)
+    return line_set
+
+
+def display_inlier_outlier(cloud, ind):
+    inlier_cloud = cloud.select_by_index(ind)
+    outlier_cloud = cloud.select_by_index(ind, invert=True)
+
+    print("Showing outliers (red) and inliers (gray): ")
+    outlier_cloud.paint_uniform_color([1, 0, 0])
+    inlier_cloud.paint_uniform_color([0.8, 0.8, 0.8])
+    o3d.visualization.draw_geometries([inlier_cloud, outlier_cloud],
+                                      zoom=0.3412,
+                                      front=[0.4257, -0.2125, -0.8795],
+                                      lookat=[2.6172, 2.0475, 1.532],
+                                      up=[-0.0694, -0.9768, 0.2024])

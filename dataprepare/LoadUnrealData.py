@@ -145,7 +145,7 @@ def label_unreal_rail(file_path,parameter,range):
     print("npy_vec.shape: ", npy_vec.shape)
     label,idx = label_points(npy_vec,parameter,range) #获得label矩阵
     new_points = np.concatenate((npy_vec[:,:3], label[:, np.newaxis]), axis=1)
-    print(new_points.shape)
+    print("new_points.shape: ",new_points.shape)
 
     #可视化
     pcd = o3d.geometry.PointCloud()
@@ -193,11 +193,11 @@ if __name__ == '__main__':
     la_file_names = sorted(os.listdir(file_root)[:31], key=lambda s: (int(s[2:3]) if s[3] is '.' or s[3] is '-' else int(s[2:4])))
     ra_file_names = sorted(os.listdir(file_root)[31:53], key=lambda s: (int(s[2:3]) if s[3] is '.' or s[3] is '-' else int(s[2:4])))
     sa_file_names = sorted(os.listdir(file_root)[53:], key=lambda s: (int(s[2:3]) if s[3] is '.' or s[3] is '-' else int(s[2:4])))
-    print(la_file_names)
-    print(ra_file_names)
-    print(sa_file_names)
+    # print(la_file_names)
+    # print(ra_file_names)
+    # print(sa_file_names)
     for i, file_name in enumerate(la_file_names) :
-        if i>=0:
+        if i>=1:
             file_path = os.path.join(file_root,file_name)
             #1. 降采样
             # from_txt2numpy_downsample(file_path,0.03,False)
@@ -205,6 +205,7 @@ if __name__ == '__main__':
             # totate_angle = adjust_xyz_bias(file_path,la_angle_bias_matrix[i],True)
             #3. label
             # label params
-            rail_ranges = [6, 100, -0.0, 0.9,  -2.73, -2.2]  # 前后，左右，上下  #[-2.5,-2.73] 轨道位置
-            parameter_lr = np.asarray([0.01953254, 0.00131197]).astype(np.float32)  # ax^2 + bx
+            rail_ranges = [6, 100, -0.4, 1.5,  -2.73, -2.2]  # 前后，左右，上下  #[-2.5,-2.73] 轨道位置
+            rail_ranges2 = [6, 100, 0.3, 0.5,  -2.5, -2.2]  # 前后，左右，上下  #[-2.5,-2.73] 轨道位置
+            parameter_lr = np.asarray([0.00710962, 0.00165822]).astype(np.float32)  # ax^2 + bx
             label_unreal_rail(file_path,parameter_lr,rail_ranges)

@@ -4,6 +4,20 @@ import sys
 import os
 sys.path.append('..')
 
+
+def pc_colors(arr):
+    list = np.asarray([
+        [255,0,0],
+        [0,0,255],
+        [127, 127, 127],
+        [127, 0, 127],
+        [127, 127, 0]
+    ])
+    colors = []
+    for i in arr:
+        colors.append(list[i])
+    return np.asarray(colors)/255
+
 class RailwayPointCloud():
     def __init__(self,  file_path):
         self.file_path = file_path
@@ -56,7 +70,9 @@ class RailwayPointCloud():
                                                            std_ratio=2.0)
         self.display_inlier_outlier(outlier_cloud, ind)
 
-def o3d_edition():
+
+
+def o3d_edition_seg_ground():
     file_path = "../datareal/npyfile/a3/1587957663079948.npy"
     railwayPC = RailwayPointCloud(file_path)
     print("origin points shape: ",railwayPC.vec.shape)
@@ -67,22 +83,7 @@ def o3d_edition():
     pcd.points = o3d.utility.Vector3dVector(rail_points[:, :3])
     railwayPC.segment_ground()
 
-
-def pc_colors(arr):
-    list = np.asarray([
-        [255,0,0],
-        [0,0,255],
-        [127, 127, 127],
-        [127, 0, 127],
-        [127, 127, 0]
-    ])
-    colors = []
-    for i in arr:
-        colors.append(list[i])
-    return np.asarray(colors)/255
-
-
-if __name__ == '__main__':
+def beta_r_seg_ground():
     file_path = "../datareal/npyfile/a3/1587957663079948.npy"
     vec_raw = np.load(file_path)
     vec = vec_raw[:,(2,1,0)]  # turn to x-y-z
@@ -140,7 +141,7 @@ if __name__ == '__main__':
                             ground_idx.append(contain_z_i_sorted[c][1])
 
                     else:
-                        ground_z = contain_z_i_sorted[2][0]+0.06
+                        ground_z = contain_z_i_sorted[0][0]+0.06
                         ground_points = contain_z_i_sorted[contain_z_i_sorted[:,0]<ground_z]
                         for c in range(len(ground_points)):
                             ground_idx.append(ground_points[c][1])
@@ -158,4 +159,61 @@ if __name__ == '__main__':
     mesh.scale(2, center=mesh.get_center())
     o3d.visualization.draw_geometries([pcd,mesh])
 
+def label2color(labels):
+    """
+    将label 转为 open3d colors 的矩阵
+    :param labels: shape=[N,]
+    :return: clors: shape=[N,3] 值的范围[0,1]
+    """
+    list = np.asarray([
+        [127,127,127],
+        [255,0,0],
+        [0,0,255],
+        [127, 0, 127],
+        [127, 127, 0]
+    ],dtype=np.float)
+    return list[labels]/255
+
+
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+from util.Show3DBox import Show3DRail
+import time
+if __name__ == '__main__':
+    t0 = time.time()
+    file_path = "../datareal/npyfile/a3/1587957663079948.npy"
+    raw_array = np.load(file_path)
+    points_array = raw_array[:, (2, 1, 0)]  # turn to x-y-z
+    labels_array = raw_array[:, -1]
+    show3DRail = Show3DRail(points_array,labels_array)
+    # show3DRail.show()
+    # 1. 提取出轨道的点云
+    rail_array = points_array[labels_array == 1]
+    label_array = labels_array[labels_array == 1]
+    # 2. 步进的距离，
+    step_x = 5.0 # 步进 x 米
+    step_bais = 6.0 # 从 bais 米开始
+    print("max and min of rail : ",np.max(rail_array,axis=0))
+    print("min and min of rail : ",np.min(rail_array,axis=0))
+
+    pcd_box = []
+    for i in range(0,10):
+        part_idx = (rail_array[:,0] >= (step_bais + i*step_x)) & (rail_array[:,0] <= (step_bais + (i+1)*step_x))
+        part_rail_points = rail_array[part_idx]
+        show3DRail.points = part_rail_points
+        part_rail_labels = label_array[part_idx]
+        show3DRail.labels = part_rail_labels
+        part_box = show3DRail.poly_fit()
+        pcd_box.append(part_box)
+    print("time cost of all: ",time.time()-t0)
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points_array)
+    pcd.colors = o3d.utility.Vector3dVector(label2color(label_array.astype(np.int)))
+    mesh = o3d.geometry.TriangleMesh.create_coordinate_frame()
+    mesh.scale(3, center=mesh.get_center())
+    pcd_box.append(pcd)
+    pcd_box.append(mesh)
+
+
+    o3d.visualization.draw_geometries(pcd_box)
 
