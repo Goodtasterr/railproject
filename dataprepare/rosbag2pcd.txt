@@ -1,0 +1,10 @@
+1. 将rosbag 转成 .pcd 以ascii格式保存；
+    参考 “http://wiki.ros.org/pcl_ros#bag_to_pcd” 的4.5 pointcloud_to_pcd
+    $ rosrun pcl_ros pointcloud_to_pcd input:=/velodyne/pointcloud2 binary:=true
+
+2. 标轨道的方法（文档加代码）
+
+3. 源数据：
+    1-仿真数据：
+        直轨道，弯轨道（左转，右转）
+    2-真实数据：
