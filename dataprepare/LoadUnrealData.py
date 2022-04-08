@@ -110,11 +110,15 @@ def label2color(labels):
     :return: clors: shape=[n,3] 值的范围[0,1]
     """
     list = np.asarray([
-        [127,127,127],
-        [255,0,0],
-        [0,0,255],
-        [127, 0, 127],
-        [127, 127, 0]
+        # [127,127,127],
+        # [255,0,0],
+        # [0,0,255],
+        # [127, 0, 127],
+        # [127, 127, 0]
+        [127, 127, 127], [0, 255, 0], [255, 0, 255],
+        # [127,127,127],
+        [128, 0, 128], [255, 0, 255],
+
     ],dtype=np.float)
     return list[labels]/255
 
@@ -166,38 +170,105 @@ def label_unreal_rail(file_path,parameter,range):
 
     # degree=2 y =         c*x^2 + b*x + a
     # degree=3 y = d*x^3 + c*x^2 + b*x + a
-    poly_features = PolynomialFeatures(degree=2, include_bias=False)
+    poly_features = PolynomialFeatures(degree=1, include_bias=False)
     X_poly = poly_features.fit_transform(x_poly)
     lin_reg = LinearRegression()
     lin_reg.fit(X_poly, y_poly)
     poly_para = [lin_reg.intercept_, lin_reg.coef_]
     print('poly_para : ', poly_para)
 
-    npy_paths = os.listdir(file_root)
     show_flag = True
     save_flag = True
 
     if show_flag:
-        o3d.visualization.draw_geometries([pcd, mesh], window_name=file_path)
+        o3d.visualization.draw_geometries([pcd, mesh], window_name=file_path,
+                                          zoom=0.3,
+                                          front=[ 0.096314076554831055, 0.020511804979741765, 0.99513962061303918 ],
+                                          lookat=[ 53.229220539861529, -2.0228925385089158, 5.6663705489609022 ],
+                                          up=[ -0.0034982659029790973, 0.99978844152479429, -0.020269048549330322 ],
+
+                                          )
     if save_flag:
         np.save(file_path, new_points)
 
+def label_unreal_obstacle(file_path,obs_range):
+    npy_vec = np.load(file_path)
+    print("npy_vec.shape: ", npy_vec.shape)
+    points,label = npy_vec[:,:3],npy_vec[:,3] #获得label矩阵
 
+    o3dshow = []
+    for i, ranges in enumerate(obs_range):
+
+        idx_x = (points[:, 0] > ranges[0]) & (points[:, 0] < ranges[3])
+        idx_y = (points[:, 1] > ranges[1]) & (points[:, 1] < ranges[4])
+        idx_z = (points[:, 2] > ranges[2]) & (points[:, 2] < ranges[5])
+        idx = idx_x & idx_y & idx_z
+        label[idx] = 3 + i ## obstale_0 =>3, obstale_1 =>4 ...
+
+        pcd_part = o3d.geometry.PointCloud()
+        pcd_part.points = o3d.utility.Vector3dVector(points[idx])
+        if len(points[idx]) > 0:
+            print("obstacle: ", i," ",points[idx].shape, " min&max:", np.min(points[idx], axis=0),
+                  " ", np.max(points[idx], axis=0))
+        else:
+            print("error range !.................")
+            exit()
+        aabb = pcd_part.get_axis_aligned_bounding_box()
+        o3dshow.append(aabb)
+
+    new_points = np.concatenate((points[:,:3], label[:, np.newaxis]), axis=1)
+
+    #可视化
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points[:, :3])
+    pcd.colors = o3d.utility.Vector3dVector(label2color(label.astype(np.int)))
+    mesh = o3d.geometry.TriangleMesh.create_coordinate_frame()
+    mesh.scale(3, center=mesh.get_center())
+    o3dshow.append(pcd)
+    o3dshow.append(mesh)
+    show_flag = True
+    save_flag = True
+    if show_flag:
+        o3d.visualization.draw_geometries(o3dshow, window_name=file_path,
+                                          zoom=0.3,
+                                          front=[ 0.096314076554831055, 0.020511804979741765, 0.99513962061303918 ],
+                                          lookat=[ 53.229220539861529, -2.0228925385089158, 5.6663705489609022 ],
+                                          up=[ -0.0034982659029790973, 0.99978844152479429, -0.020269048549330322 ],
+                                          )
+    if save_flag:
+        np.save(file_path, new_points)
+
+def check_label(file_path):
+    npy_vec = np.load(file_path)
+    print("npy_vec.shape: ", npy_vec.shape)
+    points,label = npy_vec[:,:3],npy_vec[:,-1] #获得label矩阵
+    #可视化
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points[:, :3])
+    pcd.colors = o3d.utility.Vector3dVector(label2color(label.astype(np.int)))
+    mesh = o3d.geometry.TriangleMesh.create_coordinate_frame()
+    mesh.scale(3, center=mesh.get_center())
+
+    o3d.visualization.draw_geometries([pcd, mesh], window_name=file_path,
+                                      zoom=0.3,
+                                      front=[0.096314076554831055, 0.020511804979741765, 0.99513962061303918],
+                                      lookat=[53.229220539861529, -2.0228925385089158, 5.6663705489609022],
+                                      up=[-0.0034982659029790973, 0.99978844152479429, -0.020269048549330322],
+                                          )
 if __name__ == '__main__':
     '''
     处理仿真环境录制的数据，降采样-另存为npy，
     '''
-    file_root = '../dataunreal/npyfile3'
-    # file_names = sorted(os.listdir(file_root))
+    file_root = '../dataunreal/npyfile2'
+    file_names = sorted(os.listdir(file_root))
     # 先按文件名排序
-    la_file_names = sorted(os.listdir(file_root)[:31], key=lambda s: (int(s[2:3]) if s[3] is '.' or s[3] is '-' else int(s[2:4])))
-    ra_file_names = sorted(os.listdir(file_root)[31:53], key=lambda s: (int(s[2:3]) if s[3] is '.' or s[3] is '-' else int(s[2:4])))
-    sa_file_names = sorted(os.listdir(file_root)[53:], key=lambda s: (int(s[2:3]) if s[3] is '.' or s[3] is '-' else int(s[2:4])))
-    # print(la_file_names)
-    # print(ra_file_names)
-    # print(sa_file_names)
-    for i, file_name in enumerate(la_file_names) :
-        if i>=1:
+    # la_file_names = sorted(os.listdir(file_root)[:31], key=lambda s: (int(s[2:3]) if s[3] is '.' or s[3] is '-' else int(s[2:4])))
+    # ra_file_names = sorted(os.listdir(file_root)[31:53], key=lambda s: (int(s[2:3]) if s[3] is '.' or s[3] is '-' else int(s[2:4])))
+    # sa_file_names = sorted(os.listdir(file_root)[53:], key=lambda s: (int(s[2:3]) if s[3] is '.' or s[3] is '-' else int(s[2:4])))
+
+    for i, file_name in enumerate(file_names) :
+        if i>=0 and len(file_name)>6:
+            print('i =', i , "  ", file_name)
             file_path = os.path.join(file_root,file_name)
             #1. 降采样
             # from_txt2numpy_downsample(file_path,0.03,False)
@@ -205,7 +276,17 @@ if __name__ == '__main__':
             # totate_angle = adjust_xyz_bias(file_path,la_angle_bias_matrix[i],True)
             #3. label
             # label params
-            rail_ranges = [6, 100, -0.4, 1.5,  -2.73, -2.2]  # 前后，左右，上下  #[-2.5,-2.73] 轨道位置
-            rail_ranges2 = [6, 100, 0.3, 0.5,  -2.5, -2.2]  # 前后，左右，上下  #[-2.5,-2.73] 轨道位置
-            parameter_lr = np.asarray([0.00710962, 0.00165822]).astype(np.float32)  # ax^2 + bx
-            label_unreal_rail(file_path,parameter_lr,rail_ranges)
+            # rail_ranges = [6, 100, -0.4, 1.2,  -2.86, -2.2]  # 前后，左右，上下  #[-2.5,-2.73] 轨道位置
+            # # rail_ranges = [6, 100, -.4, 2,  -2.5, -2.2]  # 前后，左右，上下  #[-2.5,-2.73] 轨道位置
+            # parameter_lr = np.asarray([ 0.00415167, 0]).astype(np.float32)  # ax^2 + bx
+            # label_unreal_rail(file_path,parameter_lr,rail_ranges)
+
+            #4. label obstacles
+            # min_xyz, max_xyz
+            obstacle_ranges = [[32,-2.7,-2.5,34,-0.3,-0.7],
+                               [52,1.0,-2.6,55,2.2,1.0]]
+            # label_unreal_obstacle(file_path,obstacle_ranges)
+
+
+            #end. check label
+            check_label(file_path)
